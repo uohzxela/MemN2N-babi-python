@@ -10,9 +10,9 @@ import pickle
 import argparse
 import numpy as np
 
-from config import BabiConfigJoint
+from config import BabiConfigJoint, BabiConfig
 from train_test import train, train_linear_start
-from util import parse_babi_task, build_model
+from util import parse_babi_task, build_model, construct_story_dict
 
 
 class MemN2N(object):
@@ -50,19 +50,19 @@ class MemN2N(object):
         print("Reading data from %s ..." % self.data_dir)
 
         # Parse training data
-        train_data_path = glob.glob('%s/qa*_*_train.txt' % self.data_dir)
+        train_data_path = glob.glob('%s/qa8_*_train.txt' % self.data_dir)
         dictionary = {"nil": 0}
         train_story, train_questions, train_qstory = parse_babi_task(train_data_path, dictionary, False)
 
         # Parse test data just to expand the dictionary so that it covers all words in the test data too
-        test_data_path = glob.glob('%s/qa*_*_test.txt' % self.data_dir)
+        test_data_path = glob.glob('%s/qa8_*_test.txt' % self.data_dir)
         parse_babi_task(test_data_path, dictionary, False)
 
         # Get reversed dictionary mapping index to word
         self.reversed_dict = dict((ix, w) for w, ix in dictionary.items())
 
         # Construct model
-        self.general_config = BabiConfigJoint(train_story, train_questions, dictionary)
+        self.general_config = BabiConfig(train_story, train_questions, dictionary)
         self.memory, self.model, self.loss = build_model(self.general_config)
 
         # Train model
@@ -86,10 +86,11 @@ class MemN2N(object):
         max_words = train_config["max_words"] \
             if not enable_time else train_config["max_words"] - 1
 
+        max_words = test_story.shape[0]
         story = [[self.reversed_dict[test_story[word_pos, sent_idx, story_idx]]
                   for word_pos in range(max_words)]
                  for sent_idx in range(last_sentence_idx + 1)]
-
+        max_words = test_qstory.shape[0]
         question = [self.reversed_dict[test_qstory[word_pos, question_idx]]
                     for word_pos in range(max_words)]
 
@@ -175,6 +176,55 @@ def train_model(data_dir, model_file):
     memn2n = MemN2N(data_dir, model_file)
     memn2n.train()
 
+def save_answers_to_file(data_dir, model_file):
+    """
+    Console-based demo
+    """
+    memn2n = MemN2N(data_dir, model_file)
+
+    # Try to load model
+    memn2n.load_model()
+
+    # Read test data
+    print("Reading test data from %s ..." % memn2n.data_dir)
+    test_data_path = glob.glob('%s/qa8_*_test.txt' % memn2n.data_dir)
+    test_story, test_questions, test_qstory = \
+        parse_babi_task(test_data_path, memn2n.general_config.dictionary, False)
+
+    story_dict = construct_story_dict(test_data_path)
+
+    curr_story_idx, question_idx_in_story= -1, 1
+    f = open('setqa_answers7_2.txt', 'w')
+    print >> f, 'textID,sortedAnswerList'
+    for question_idx in xrange(test_questions.shape[1]):
+        # Pick a random question
+        story_idx         = test_questions[0, question_idx]
+        last_sentence_idx = test_questions[1, question_idx]
+
+        # Get story and question
+        story_txt, question_txt, correct_answer = memn2n.get_story_texts(test_story, test_questions, test_qstory,
+                                                                         question_idx, story_idx, last_sentence_idx)
+
+        pred_answer_idx, pred_prob, memory_probs = \
+            memn2n.predict_answer(test_story, test_questions, test_qstory,
+                                  question_idx, story_idx, last_sentence_idx)
+
+        pred_answer = memn2n.reversed_dict[pred_answer_idx]
+
+        if story_idx != curr_story_idx:
+            curr_story_idx = story_idx
+            question_idx_in_story = 0
+
+        question_idx_in_story += 1
+
+        pred_answer_idx_in_story = [story_dict[story_idx][x] for x in pred_answer.split(",")]
+        pred_answer_idx_in_story = [str(x) for x in sorted(pred_answer_idx_in_story)]
+        
+        print >> f, '{}_{},{}'.format(story_idx+1, question_idx_in_story, " ".join(pred_answer_idx_in_story))
+        # print '{}_{},{}'.format(story_idx+1, question_idx_in_story, " ".join(pred_answer_idx_in_story))
+
+    f.close()
+
 
 def run_console_demo(data_dir, model_file):
     """
@@ -187,13 +237,14 @@ def run_console_demo(data_dir, model_file):
 
     # Read test data
     print("Reading test data from %s ..." % memn2n.data_dir)
-    test_data_path = glob.glob('%s/qa*_*_test.txt' % memn2n.data_dir)
+    test_data_path = glob.glob('%s/qa8_*_test.txt' % memn2n.data_dir)
     test_story, test_questions, test_qstory = \
         parse_babi_task(test_data_path, memn2n.general_config.dictionary, False)
 
     while True:
         # Pick a random question
-        question_idx      = np.random.randint(test_questions.shape[1])
+        # question_idx      = np.random.randint(test_questions.shape[1])
+        question_idx = 1
         story_idx         = test_questions[0, question_idx]
         last_sentence_idx = test_questions[1, question_idx]
 
@@ -251,8 +302,10 @@ if __name__ == "__main__":
                        help="train model (default: %(default)s)")
     group.add_argument("-console", "--console-demo", action="store_true",
                        help="run console-based demo (default: %(default)s)")
-    group.add_argument("-web", "--web-demo", action="store_true", default=True,
+    group.add_argument("-web", "--web-demo", action="store_true",
                        help="run web-based demo (default: %(default)s)")
+    group.add_argument("-setqa", "--save-answers", action="store_true", default=True,
+                       help="save answers to file (default: %(default)s)")
     args = parser.parse_args()
 
     if not os.path.exists(args.data_dir):
@@ -263,5 +316,7 @@ if __name__ == "__main__":
         train_model(args.data_dir, args.model_file)
     elif args.console_demo:
         run_console_demo(args.data_dir, args.model_file)
+    elif args.save_answers:
+        save_answers_to_file(args.data_dir, args.model_file)
     else:
         run_web_demo(args.data_dir, args.model_file)

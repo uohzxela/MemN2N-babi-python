@@ -178,6 +178,19 @@ def test(test_story, test_questions, test_qstory, memory, model, loss, general_c
     max_words = train_config["max_words"] \
         if not enable_time else train_config["max_words"] - 1
 
+    print 'test story:'
+    print test_story
+        # story (3-D array)
+        #     [position of word in sentence, sentence index, story index] = index of word in dictionary
+        # questions (2-D array)
+        #     [0-9, question index], in which the first component is encoded as follows:
+        #         0 - story index
+        #         1 - index of the last sentence before the question
+        #         2 - index of the answer word in dictionary
+        #         3 to 13 - indices of supporting sentence
+        #         14 - line index
+        # qstory (2-D array) question's indices within a story
+        #     [index of word in question, question index] = index of word in dictionary
     for k in range(int(math.floor(test_questions.shape[1] / batch_size))):
         batch = np.arange(k * batch_size, (k + 1) * batch_size)
 
@@ -204,6 +217,7 @@ def test(test_story, test_questions, test_qstory, memory, model, loss, general_c
             memory[i].data = memory[0].data
 
         out = model.fprop(input_data)
+        # print out
         # cost = loss.fprop(out, target_data)
         total_test_err += loss.get_error(out, target_data)
         total_test_num += batch_size

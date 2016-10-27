@@ -645,5 +645,11 @@ class CrossEntropyLoss(Loss):
         return grad_input
 
     def get_error(self, input_data, target_data):
+        # print "input:"
+        # print input_data
         y = input_data.argmax(axis=0)
+        # print
+        # print 'y:', y
+        # print 'target_data:', target_data
+        # print "sum:", np.sum(y != target_data)
         return np.sum(y != target_data)

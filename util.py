@@ -3,11 +3,42 @@ from __future__ import division
 import sys
 import time
 
+from collections import defaultdict
+
 import numpy as np
 
 from memn2n.memory import MemoryL, MemoryBoW
 from memn2n.nn import AddTable, CrossEntropyLoss, Duplicate, ElemMult, LinearNB
 from memn2n.nn import Identity, ReLU, Sequential, LookupTable, Sum, Parallel, Softmax
+
+def construct_story_dict(data_files):
+    story_dict = []
+    story_idx, word_idx = -1, 1
+    for fp in data_files:
+        with open(fp) as f:
+            for line_idx, line in enumerate(f):
+                line = line.rstrip().lower()
+                words = line.split()
+
+                # Story begins
+                if words[0] == '1':
+                    story_idx += 1
+                    word_idx = 1
+                    story_dict.append(defaultdict(lambda: -1))
+
+                # Skip substory index
+                for k in range(1, len(words)):
+                    w = words[k].lower()
+
+                    if w.endswith('.') or w.endswith('?'):
+                        w = w[:-1]
+
+                    if w not in story_dict[story_idx]:
+                        story_dict[story_idx][w] = word_idx
+
+                    word_idx += 1
+
+    return story_dict
 
 
 def parse_babi_task(data_files, dictionary, include_question):
@@ -34,22 +65,23 @@ def parse_babi_task(data_files, dictionary, include_question):
     """
     # Try to reserve spaces beforehand (large matrices for both 1k and 10k data sets)
     # maximum number of words in sentence = 20
-    story     = np.zeros((20, 500, len(data_files) * 3500), np.int16)
-    questions = np.zeros((14, len(data_files) * 10000), np.int16)
-    qstory    = np.zeros((20, len(data_files) * 10000), np.int16)
+    story     = np.zeros((20, 500, len(data_files) * 30000), np.int16)
+    questions = np.zeros((14, len(data_files) * 30000), np.int16)
+    qstory    = np.zeros((20, len(data_files) * 30000), np.int16)
 
     # NOTE: question's indices are not reset when going through a new story
     story_idx, question_idx, sentence_idx, max_words, max_sentences = -1, -1, -1, 0, 0
 
     # Mapping line number (within a story) to sentence's index (to support the flag include_question)
     mapping = None
-
+    print data_files
     for fp in data_files:
         with open(fp) as f:
             for line_idx, line in enumerate(f):
                 line = line.rstrip().lower()
+                # print line
                 words = line.split()
-
+                # print line
                 # Story begins
                 if words[0] == '1':
                     story_idx += 1
@@ -82,7 +114,8 @@ def parse_babi_task(data_files, dictionary, include_question):
 
                     if max_words < k:
                         max_words = k
-
+                    # story (3-D array)
+                    # [position of word in sentence, sentence index, story index] = index of word in dictionary
                     if not is_question:
                         story[k - 1, sentence_idx, story_idx] = dictionary[w]
                     else:
@@ -92,11 +125,12 @@ def parse_babi_task(data_files, dictionary, include_question):
 
                         # NOTE: Punctuation is already removed from w
                         if words[k].endswith('?'):
-                            answer = words[k + 1]
-                            if answer not in dictionary:
-                                dictionary[answer] = len(dictionary)
+                            if k+1 < len(words):
+                                answer = words[k + 1]
+                                if answer not in dictionary:
+                                    dictionary[answer] = len(dictionary)
 
-                            questions[2, question_idx] = dictionary[answer]
+                                questions[2, question_idx] = dictionary[answer]
 
                             # Indices of supporting sentences
                             for h in range(k + 2, len(words)):

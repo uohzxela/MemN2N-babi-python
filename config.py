@@ -7,8 +7,8 @@ class BabiConfig(object):
     def __init__(self, train_story, train_questions, dictionary):
         self.dictionary       = dictionary
         self.batch_size       = 32
-        self.nhops            = 3
-        self.nepochs          = 100
+        self.nhops            = 5
+        self.nepochs          = 200
         self.lrate_decay_step = 25   # reduce learning rate by half every 25 epochs
 
         # Use 10% of training data for validation
