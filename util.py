@@ -79,9 +79,7 @@ def parse_babi_task(data_files, dictionary, include_question):
         with open(fp) as f:
             for line_idx, line in enumerate(f):
                 line = line.rstrip().lower()
-                # print line
                 words = line.split()
-                # print line
                 # Story begins
                 if words[0] == '1':
                     story_idx += 1
@@ -114,8 +112,7 @@ def parse_babi_task(data_files, dictionary, include_question):
 
                     if max_words < k:
                         max_words = k
-                    # story (3-D array)
-                    # [position of word in sentence, sentence index, story index] = index of word in dictionary
+
                     if not is_question:
                         story[k - 1, sentence_idx, story_idx] = dictionary[w]
                     else:
